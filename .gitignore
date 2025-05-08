@@ -1,9 +1,8 @@
 # Binary
-transcript-cli
+yt-tx
 
 # Working directories
 raw_vtt/
-transcripts/
 cleaned/
 
 # VTT and text files
