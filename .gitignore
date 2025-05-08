@@ -23,3 +23,6 @@ vendor/
 # IDE files
 .vscode/
 .DS_Store
+
+# Added by goreleaser init:
+dist/
