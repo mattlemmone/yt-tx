@@ -28,21 +28,21 @@ type collapseDoneMsg struct{ err error }
 
 // model holds the application state
 type model struct {
-	urls    []string
-	idx     int
-	total   int
-	stage   string
-	spinner spinner.Model
+	urls            []string
+	currentVideoIdx int
+	total           int
+	stage           string
+	spinner         spinner.Model
 }
 
 func initialModel(urls []string) model {
 	sp := spinner.New(spinner.WithSpinner(spinner.Moon))
 	return model{
-		urls:    urls,
-		idx:     0,
-		total:   len(urls),
-		stage:   "fetch",
-		spinner: sp,
+		urls:            urls,
+		currentVideoIdx: 0,
+		total:           len(urls),
+		stage:           "fetch",
+		spinner:         sp,
 	}
 }
 
@@ -53,7 +53,7 @@ func (m model) Init() tea.Cmd {
 
 func (m model) fetchCmd() tea.Cmd {
 	return func() tea.Msg {
-		url := m.urls[m.idx]
+		url := m.urls[m.currentVideoIdx]
 		err := exec.Command("yt-dlp", "--quiet", url,
 			"--skip-download", "--write-sub", "--write-auto-sub",
 			"--sub-lang", "en", "--convert-subs", "vtt",
@@ -133,32 +133,48 @@ func cleanTranscriptLines(lines []string) []string {
 	return outLines
 }
 
+// getCleanedOutputPath returns the output path for the cleaned transcript, using only the title part of the filename.
+func getCleanedOutputPath(vttPath string) string {
+	base := filepath.Base(vttPath)
+	titleParts := strings.SplitN(base, "--", 2)
+	var title string
+	if len(titleParts) > 1 {
+		title = titleParts[1]
+	} else {
+		title = base
+	}
+	title = strings.TrimSuffix(title, ".vtt")
+	return filepath.Join(cleanedDir, title+".clean.txt")
+}
+
+// cleanAndDedupeVTT reads a VTT file, cleans and dedupes its lines, and returns the result as a string.
+func cleanAndDedupeVTT(vttPath string) (string, error) {
+	input, err := os.ReadFile(vttPath)
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(string(input), "\n")
+	cleaned := cleanTranscriptLines(lines)
+	final := dedupeLines(cleaned)
+	return strings.Join(final, "\n"), nil
+}
+
 func (m model) processCmd() tea.Cmd {
 	return func() tea.Msg {
 		pattern := filepath.Join(rawVTTDir, "*.vtt")
 		files, _ := filepath.Glob(pattern)
-		file := files[m.idx]
-		os.MkdirAll(cleanedDir, 0755)
-		base := filepath.Base(file)
-
-		titleParts := strings.SplitN(base, "--", 2)
-		var title string
-		if len(titleParts) > 1 {
-			title = titleParts[1]
-		} else {
-			title = base
+		if m.currentVideoIdx >= len(files) {
+			return collapseDoneMsg{fmt.Errorf("no VTT file at index %d", m.currentVideoIdx)}
 		}
-		title = strings.TrimSuffix(title, ".vtt")
-		outPath := filepath.Join(cleanedDir, title+".clean.txt")
-		// Clean and dedupe in one go
-		input, err := os.ReadFile(file)
+
+		file := files[m.currentVideoIdx]
+
+		outPath := getCleanedOutputPath(file)
+		output, err := cleanAndDedupeVTT(file)
 		if err != nil {
 			return collapseDoneMsg{err}
 		}
-		lines := strings.Split(string(input), "\n")
-		cleaned := cleanTranscriptLines(lines)
-		final := dedupeLines(cleaned)
-		err = os.WriteFile(outPath, []byte(strings.Join(final, "\n")), 0644)
+		err = os.WriteFile(outPath, []byte(output), 0644)
 		return collapseDoneMsg{err}
 	}
 }
@@ -175,8 +191,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.processCmd(), spinner.Tick)
 
 	case collapseDoneMsg:
-		m.idx++
-		if m.idx >= m.total {
+		m.currentVideoIdx++
+		if m.currentVideoIdx >= m.total {
 			m.stage = "done"
 			return m, tea.Quit
 		}
@@ -195,10 +211,10 @@ func (m model) View() string {
 
 	pattern := filepath.Join(rawVTTDir, "*.vtt")
 	files, _ := filepath.Glob(pattern)
-	if m.idx >= len(files) || len(files) == 0 {
-		return fmt.Sprintf("[%d/%d] Waiting for files...\n%s\n", m.idx+1, m.total, m.spinner.View())
+	if m.currentVideoIdx >= len(files) || len(files) == 0 {
+		return fmt.Sprintf("[%d/%d] Waiting for files...\n%s\n", m.currentVideoIdx+1, m.total, m.spinner.View())
 	}
-	file := files[m.idx]
+	file := files[m.currentVideoIdx]
 	base := filepath.Base(file)
 	titleParts := strings.SplitN(base, "--", 2)
 	var displayTitle string
@@ -207,7 +223,7 @@ func (m model) View() string {
 	} else {
 		displayTitle = base
 	}
-	header := fmt.Sprintf("[%d/%d] Processing %s...", m.idx+1, m.total, displayTitle)
+	header := fmt.Sprintf("[%d/%d] Processing %s...", m.currentVideoIdx+1, m.total, displayTitle)
 	return fmt.Sprintf("%s\n%s\n", header, m.spinner.View())
 }
 
