@@ -64,33 +64,6 @@ func (m model) fetchCmd() tea.Cmd {
 	}
 }
 
-func cleanTranscriptFile(inPath, outPath string) error {
-	input, err := os.ReadFile(inPath)
-	if err != nil {
-		return err
-	}
-	lines := strings.Split(string(input), "\n")
-	var outLines []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || line == "WEBVTT" {
-			continue
-		}
-		if isNumber(line) {
-			continue
-		}
-		if isTimestamp(line) {
-			continue
-		}
-		line = stripHTMLTags(line)
-		if line == "" {
-			continue
-		}
-		outLines = append(outLines, line)
-	}
-	return os.WriteFile(outPath, []byte(strings.Join(outLines, "\n")), 0644)
-}
-
 // dedupeLines removes consecutive duplicate lines from a slice of strings.
 func dedupeLines(lines []string) []string {
 	var outLines []string
