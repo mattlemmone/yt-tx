@@ -1,0 +1,25 @@
+# Binary
+transcript-cli
+
+# Working directories
+raw_vtt/
+transcripts/
+cleaned/
+
+# VTT and text files
+*.vtt
+*.txt
+*.clean.txt
+
+# Go build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Vendor
+vendor/
+
+# IDE files
+.vscode/
+.DS_Store
