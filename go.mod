@@ -1,4 +1,4 @@
-module yt-tx
+module github.com/mattlemmone/yt-tx
 
 go 1.23.0
 
