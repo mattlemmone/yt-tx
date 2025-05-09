@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -45,29 +44,26 @@ type model struct {
 	currentVideoIdx int
 	total           int
 	stage           string
-	spinner         spinner.Model
 	progress        progress.Model
 	readyToQuit     bool // Added to manage final quit sequence
 }
 
 func initialModel(urls []string) model {
-	sp := spinner.New(spinner.WithSpinner(spinner.Moon))
 	pg := progress.New(progress.WithDefaultGradient())
 	return model{
 		urls:            urls,
 		currentVideoIdx: 0,
 		total:           len(urls),
 		stage:           "fetch",
-		spinner:         sp,
 		progress:        pg,
 		readyToQuit:     false, // Explicitly initialize
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	// start spinner, first fetch, and progress bar animation
+	// start first fetch and progress bar animation
 	var cmds []tea.Cmd
-	cmds = append(cmds, spinner.Tick, m.fetchCmd())
+	cmds = append(cmds, m.fetchCmd())
 
 	updatedProgressModel, progressCmd := m.progress.Update(progress.FrameMsg{})
 	m.progress = updatedProgressModel.(progress.Model)
@@ -207,12 +203,12 @@ func (m model) renderInProgress() string {
 	pattern := filepath.Join(rawVTTDir, "*.vtt")
 	files, _ := filepath.Glob(pattern)
 	if m.currentVideoIdx >= len(files) || len(files) == 0 {
-		return fmt.Sprintf("[%d/%d] Waiting for files...\n%s\n", m.currentVideoIdx+1, m.total, m.spinner.View())
+		return fmt.Sprintf("[%d/%d] Waiting for files...\n", m.currentVideoIdx+1, m.total)
 	}
 
 	displayTitle := extractDisplayTitle(files[m.currentVideoIdx])
 	header := fmt.Sprintf("[%d/%d] Processing %s...", m.currentVideoIdx+1, m.total, displayTitle)
-	return fmt.Sprintf("%s\n%s\n%s\n", header, m.spinner.View(), m.progress.View())
+	return fmt.Sprintf("%s\n%s\n", header, m.progress.View())
 }
 
 func (m model) View() string {
@@ -270,7 +266,7 @@ func (m model) handleFetchDone() (tea.Model, tea.Cmd) {
 	m.progress = updatedProgressModel.(progress.Model)
 
 	var cmds []tea.Cmd
-	cmds = append(cmds, m.processCmd(), spinner.Tick, setPercentCmd)
+	cmds = append(cmds, m.processCmd(), setPercentCmd)
 	if progressAnimCmd != nil {
 		cmds = append(cmds, progressAnimCmd)
 	}
@@ -294,7 +290,7 @@ func (m model) handleProcessDone() (tea.Model, tea.Cmd) {
 
 	// Prepare batch of commands
 	var cmds []tea.Cmd
-	cmds = append(cmds, m.fetchCmd(), spinner.Tick, setPercentCmd)
+	cmds = append(cmds, m.fetchCmd(), setPercentCmd)
 
 	// Update animation and get the latest model state for progress bar
 	updatedProgressModel, progressAnimCmd := m.progress.Update(progress.FrameMsg{})
@@ -333,11 +329,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
-	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
-
 	// Handle progress bar animation
 	case progress.FrameMsg:
 		progressModel, cmd := m.progress.Update(msg)
