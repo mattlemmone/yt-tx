@@ -199,6 +199,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stage = "fetch"
 		return m, tea.Batch(m.fetchCmd(), spinner.Tick)
 
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyCtrlC:
+			return m, tea.Quit
+		default:
+			return m, nil
+		}
+
 	default:
 		return m, nil
 	}
