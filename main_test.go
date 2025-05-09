@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -47,29 +46,6 @@ func TestStripHTMLTags(t *testing.T) {
 			t.Errorf("stripHTMLTags(%q) = %q, want %q", input, got, want)
 		}
 	}
-}
-
-// Helper: cleanTranscriptLines applies the cleaning logic to a slice of lines.
-func cleanTranscriptLines(lines []string) []string {
-	var outLines []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || line == "WEBVTT" {
-			continue
-		}
-		if isNumber(line) {
-			continue
-		}
-		if isTimestamp(line) {
-			continue
-		}
-		line = stripHTMLTags(line)
-		if line == "" {
-			continue
-		}
-		outLines = append(outLines, line)
-	}
-	return outLines
 }
 
 // Helper: dedupeLines removes consecutive duplicate lines from a slice.
