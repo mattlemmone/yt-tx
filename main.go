@@ -20,6 +20,7 @@ const (
 var (
 	rawVTTDir  string
 	cleanedDir string
+	cleanDirs  bool // Flag to control whether to clean directories before processing
 )
 
 // Messages to signal task completion
@@ -38,6 +39,17 @@ func ensureDirectories() error {
 	return nil
 }
 
+// cleanDirectories removes all files from the directories to avoid processing old files
+func cleanDirectories() error {
+	if err := os.RemoveAll(rawVTTDir); err != nil {
+		return err
+	}
+	if err := ensureDirectories(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // model holds the application state
 type model struct {
 	urls            []string
@@ -45,7 +57,9 @@ type model struct {
 	total           int
 	stage           string
 	progress        progress.Model
-	readyToQuit     bool // Added to manage final quit sequence
+	readyToQuit     bool              // Added to manage final quit sequence
+	processedFiles  []string          // Track files processed in current run
+	videoTitles     map[string]string // Map of video URLs to their titles
 }
 
 func initialModel(urls []string) model {
@@ -57,20 +71,43 @@ func initialModel(urls []string) model {
 		stage:           "fetch",
 		progress:        pg,
 		readyToQuit:     false, // Explicitly initialize
+		processedFiles:  []string{},
+		videoTitles:     make(map[string]string),
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	// start first fetch and progress bar animation
-	var cmds []tea.Cmd
-	cmds = append(cmds, m.fetchCmd())
+	// First fetch the title, then start the subtitle download and progress bar animation
+	return tea.Batch(
+		m.fetchTitleCmd(),
+		func() tea.Msg { return progress.FrameMsg{} },
+	)
+}
 
-	updatedProgressModel, progressCmd := m.progress.Update(progress.FrameMsg{})
-	m.progress = updatedProgressModel.(progress.Model)
-	if progressCmd != nil {
-		cmds = append(cmds, progressCmd)
+// fetchVideoTitle uses yt-dlp to get the video title
+func fetchVideoTitle(url string) string {
+	cmd := exec.Command("yt-dlp", "--quiet", "--print", "title", url)
+	output, err := cmd.Output()
+	if err != nil {
+		return extractVideoID(url) // Fallback to ID if title fetch fails
 	}
-	return tea.Batch(cmds...)
+	title := strings.TrimSpace(string(output))
+	if title == "" {
+		return extractVideoID(url) // Fallback if title is empty
+	}
+	return title
+}
+
+// fetchTitleCmd creates a command to fetch the video title
+func (m model) fetchTitleCmd() tea.Cmd {
+	return func() tea.Msg {
+		url := m.urls[m.currentVideoIdx]
+		title := fetchVideoTitle(url)
+		return struct {
+			url   string
+			title string
+		}{url, title}
+	}
 }
 
 // fetchCmd downloads subtitles for the current video.
@@ -204,16 +241,65 @@ func cleanAndDedupeVTT(vttPath string) (string, error) {
 	return strings.Join(final, "\n"), nil
 }
 
-// renderInProgress renders the UI when processing is in progress.
-func (m model) renderInProgress() string {
-	pattern := filepath.Join(rawVTTDir, "*.vtt")
-	files, _ := filepath.Glob(pattern)
-	if m.currentVideoIdx >= len(files) || len(files) == 0 {
-		return fmt.Sprintf("[%d/%d] Waiting for files...\n", m.currentVideoIdx+1, m.total)
+// extractVideoID extracts the video ID from a YouTube URL
+func extractVideoID(url string) string {
+	// Check for standard YouTube URL format (v= parameter)
+	if idx := strings.Index(url, "v="); idx != -1 {
+		vidID := url[idx+2:] // Get everything after v=
+		if ampIdx := strings.Index(vidID, "&"); ampIdx != -1 {
+			// Cut at first ampersand if there are other parameters
+			return vidID[:ampIdx]
+		}
+		return vidID
 	}
 
-	displayTitle := extractDisplayTitle(files[m.currentVideoIdx])
-	header := fmt.Sprintf("[%d/%d] Processing %s...", m.currentVideoIdx+1, m.total, displayTitle)
+	// Check for youtu.be format
+	if idx := strings.Index(url, "youtu.be/"); idx != -1 {
+		vidID := url[idx+9:] // Get everything after youtu.be/
+		if questionIdx := strings.Index(vidID, "?"); questionIdx != -1 {
+			// Cut at question mark if there are query parameters
+			return vidID[:questionIdx]
+		}
+		return vidID
+	}
+
+	// If we can't extract cleanly, just return a shortened URL
+	if len(url) > 30 {
+		return url[:27] + "..."
+	}
+	return url
+}
+
+// renderInProgress renders the UI when processing is in progress.
+func (m model) renderInProgress() string {
+	// Always show progress information, regardless of file availability
+	header := fmt.Sprintf("[%d/%d] ", m.currentVideoIdx+1, m.total)
+
+	// Find newest VTT files
+	pattern := filepath.Join(rawVTTDir, "*.vtt")
+	files, _ := filepath.Glob(pattern)
+
+	// Add current task description
+	if m.stage == "fetch" {
+		currentURL := m.urls[m.currentVideoIdx]
+		title, exists := m.videoTitles[currentURL]
+		if !exists {
+			// If we don't have the title yet, just show fetching title message
+			header += "Fetching title..."
+		} else {
+			// Once we have the title, show downloading subtitles message
+			header += fmt.Sprintf("Downloading subtitles for: %s", title)
+		}
+	} else if m.stage == "process" {
+		if m.currentVideoIdx < len(files) && len(files) > 0 {
+			displayTitle := extractDisplayTitle(files[len(files)-1])
+			header += fmt.Sprintf("Processing %s...", displayTitle)
+		} else {
+			header += "Processing..."
+		}
+	}
+
+	// Always show progress bar
 	return fmt.Sprintf("%s\n%s\n", header, m.progress.View())
 }
 
@@ -228,23 +314,41 @@ func (m model) View() string {
 // processCmd processes the downloaded VTT file for the current video.
 func (m model) processCmd() tea.Cmd {
 	return func() tea.Msg {
-		// Find VTT files in the raw directory
+		// Find newest VTT files in the raw directory (most recently downloaded)
 		pattern := filepath.Join(rawVTTDir, "*.vtt")
 		files, err := filepath.Glob(pattern)
 		if err != nil {
 			return collapseDoneMsg{err}
 		}
 
-		if m.currentVideoIdx >= len(files) {
-			return collapseDoneMsg{fmt.Errorf("no VTT file at index %d", m.currentVideoIdx)}
+		if len(files) == 0 {
+			return collapseDoneMsg{fmt.Errorf("no VTT files found")}
 		}
 
-		// Get the current file to process
-		file := files[m.currentVideoIdx]
-		outPath := getCleanedOutputPath(file)
+		// Find the most recently modified file, which should be from the current run
+		var newestFile string
+		var newestTime int64
+		for _, file := range files {
+			info, err := os.Stat(file)
+			if err != nil {
+				continue
+			}
+
+			modTime := info.ModTime().Unix()
+			if modTime > newestTime {
+				newestFile = file
+				newestTime = modTime
+			}
+		}
+
+		if newestFile == "" {
+			return collapseDoneMsg{fmt.Errorf("couldn't determine newest VTT file")}
+		}
+
+		outPath := getCleanedOutputPath(newestFile)
 
 		// Clean and dedupe the VTT content
-		output, err := cleanAndDedupeVTT(file)
+		output, err := cleanAndDedupeVTT(newestFile)
 		if err != nil {
 			return collapseDoneMsg{err}
 		}
@@ -287,16 +391,16 @@ func (m model) handleProcessDone() (tea.Model, tea.Cmd) {
 		return m.handleAllProcessingComplete()
 	}
 
-	// Not done yet, set stage for next fetch
+	// Not done yet, set stage for fetching title first
 	m.stage = "fetch"
 
 	// Calculate percentage based on completed videos
 	percentComplete := float64(m.currentVideoIdx) / float64(m.total)
 	setPercentCmd := m.progress.SetPercent(percentComplete)
 
-	// Prepare batch of commands
+	// Prepare batch of commands - first fetch title, then continue
 	var cmds []tea.Cmd
-	cmds = append(cmds, m.fetchCmd(), setPercentCmd)
+	cmds = append(cmds, m.fetchTitleCmd(), setPercentCmd)
 
 	// Update animation and get the latest model state for progress bar
 	updatedProgressModel, progressAnimCmd := m.progress.Update(progress.FrameMsg{})
@@ -341,6 +445,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.progress = progressModel.(progress.Model)
 		return m, cmd
 
+	// Handle title fetch results
+	case struct {
+		url   string
+		title string
+	}:
+		m.videoTitles[msg.url] = msg.title
+		// After getting the title, start the fetch process
+		var cmds []tea.Cmd
+		cmds = append(cmds, m.fetchCmd())
+
+		// Continue animating progress bar
+		updatedProgressModel, progressCmd := m.progress.Update(progress.FrameMsg{})
+		m.progress = updatedProgressModel.(progress.Model)
+		if progressCmd != nil {
+			cmds = append(cmds, progressCmd)
+		}
+		return m, tea.Batch(cmds...)
+
 	case fetchDoneMsg:
 		return m.handleFetchDone()
 
@@ -370,6 +492,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func main() {
 	flag.StringVar(&rawVTTDir, "raw_vtt_dir", defaultRawVTTDir, "Directory for downloaded VTT files")
 	flag.StringVar(&cleanedDir, "cleaned_dir", defaultCleanedDir, "Directory for deduplicated transcript files")
+	flag.BoolVar(&cleanDirs, "clean", true, "Clean directories before processing")
 	flag.Parse()
 
 	urls := flag.Args()
@@ -379,10 +502,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Ensure directories exist before starting the program
-	if err := ensureDirectories(); err != nil {
-		fmt.Printf("Error creating directories: %v\n", err)
-		os.Exit(1)
+	// Clean directories if flag is set to avoid processing old files
+	if cleanDirs {
+		if err := cleanDirectories(); err != nil {
+			fmt.Printf("Error cleaning directories: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		// Just ensure directories exist
+		if err := ensureDirectories(); err != nil {
+			fmt.Printf("Error creating directories: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	p := tea.NewProgram(initialModel(urls))
