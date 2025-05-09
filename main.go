@@ -77,7 +77,8 @@ func (m model) Init() tea.Cmd {
 func (m model) fetchCmd() tea.Cmd {
 	return func() tea.Msg {
 		url := m.urls[m.currentVideoIdx]
-		outputTemplate := filepath.Join(rawVTTDir, "%(id)s--%(title).200s.vtt")
+		// Don't add .vtt extension - yt-dlp will add extensions automatically
+		outputTemplate := filepath.Join(rawVTTDir, "%(id)s--%(title).200s")
 
 		err := exec.Command("yt-dlp", "--quiet", url,
 			"--skip-download", "--write-sub", "--write-auto-sub",
@@ -172,7 +173,12 @@ func getCleanedOutputPath(vttPath string) string {
 	} else {
 		title = base
 	}
+
+	// Remove all .vtt and .en extensions - they may appear in various combinations
 	title = strings.TrimSuffix(title, ".vtt")
+	title = strings.TrimSuffix(title, ".en")
+	title = strings.TrimSuffix(title, ".vtt") // Handle potential double .vtt
+
 	return filepath.Join(cleanedDir, title+".txt")
 }
 
