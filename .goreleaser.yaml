@@ -8,7 +8,6 @@
 
 version: 2
 
-
 builds:
   - env:
       - CGO_ENABLED=0
@@ -16,6 +15,7 @@ builds:
       - linux
       - windows
       - darwin
+    main: ./cmd/yt-tx
 
 archives:
   - formats: [tar.gz]
