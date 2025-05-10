@@ -25,31 +25,42 @@ type TitleFetchResult struct {
 
 // WorkflowState represents the application's workflow state
 type WorkflowState struct {
-	CurrentJob     *TranscriptJob // Changed from Jobs []TranscriptJob
-	CurrentStage   string         // "fetching_title", "downloading", "processing", "completed", "failed"
-	ProgressView   ProgressView
-	ReadyToQuit    bool // Manages quit sequence
-	ProcessedFiles []string
-	RawVTTDir      string
-	CleanedDir     string
-	InitialURL     string // To store the initial URL for the single job
+	Jobs            []TranscriptJob // Changed back from *TranscriptJob
+	CurrentJobIndex int             // Re-added
+	TotalJobs       int             // Re-added
+	CurrentStage    string          // "fetching_title", "downloading", "processing", "completed", "failed"
+	ProgressView    ProgressView
+	ReadyToQuit     bool // Manages quit sequence
+	ProcessedFiles  []string
+	RawVTTDir       string
+	CleanedDir      string
+	// InitialURL     string // Removed
 }
 
-// NewWorkflow creates a new workflow with initial state for the given URL
-func NewWorkflow(url string, rawVTTDir, cleanedDir string) WorkflowState {
-	job := &TranscriptJob{
-		URL:    url,
-		Status: "pending", // Will transition to fetching_title in Init
+// NewWorkflow creates a new workflow with initial state for the given URLs
+func NewWorkflow(urls []string, rawVTTDir, cleanedDir string) WorkflowState {
+	jobs := make([]TranscriptJob, len(urls))
+	for i, url := range urls {
+		jobs[i] = TranscriptJob{
+			URL:    url,
+			Status: "pending", // Initial status for each job
+		}
+	}
+
+	initialStage := "fetching_title" // Overall workflow starts by fetching title for the first job
+	if len(urls) == 0 {
+		initialStage = "completed" // Or some other appropriate state if no URLs
 	}
 
 	return WorkflowState{
-		CurrentJob:     job,
-		InitialURL:     url,              // Store the initial URL
-		CurrentStage:   "fetching_title", // Initial stage
-		ProgressView:   NewProgressView(),
-		ReadyToQuit:    false,
-		ProcessedFiles: []string{},
-		RawVTTDir:      rawVTTDir,
-		CleanedDir:     cleanedDir,
+		Jobs:            jobs,
+		CurrentJobIndex: 0,
+		TotalJobs:       len(urls),
+		CurrentStage:    initialStage,
+		ProgressView:    NewProgressView(),
+		ReadyToQuit:     false,
+		ProcessedFiles:  []string{},
+		RawVTTDir:       rawVTTDir,
+		CleanedDir:      cleanedDir,
 	}
 }

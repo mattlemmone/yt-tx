@@ -1,58 +1,76 @@
 package internal
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Init is the first command that will be run.
 func (w WorkflowState) Init() tea.Cmd {
-	// Start by fetching the title of the current job
-	if w.CurrentJob != nil && w.CurrentJob.URL != "" {
-		// CurrentStage is already "fetching_title" from NewWorkflow
-		return func() tea.Msg {
-			title, err := FetchTitle(w.CurrentJob.URL)
-			if err != nil && title == "" { // If FetchTitle had an error and couldn't even get an ID
-				// Propagate the error, URL is important for context
-				return TitleFetchResult{URL: w.CurrentJob.URL, Title: "", Err: err}
-			}
-			// If err is not nil but title has fallback (ID), it's not a fatal error for fetching stage
-			// The error from FetchTitle (e.g. empty title from yt-dlp) will be in Err field.
-			return TitleFetchResult{URL: w.CurrentJob.URL, Title: title, Err: err}
-		}
+	if w.TotalJobs == 0 {
+		return tea.Quit // No jobs, nothing to do
 	}
-	return nil
+	// Start by fetching the title of the first job
+	w.Jobs[0].Status = "fetching_title"
+	w.CurrentStage = "fetching_title" // Set overall stage
+	return func() tea.Msg {
+		url := w.Jobs[0].URL
+		title, err := FetchTitle(url)
+		// Error handling for FetchTitle: return result with error to be handled in Update
+		return TitleFetchResult{URL: url, Title: title, Err: err}
+	}
 }
 
 // View renders the UI for the current workflow state
 func (w WorkflowState) View() string {
-	if w.CurrentJob == nil {
-		return "Initializing..." // Or some other appropriate message
+	if w.TotalJobs == 0 {
+		return "No URLs provided. Exiting."
 	}
 
-	title := w.CurrentJob.Title
-	// If title is empty during fetching_title, use a placeholder
-	if w.CurrentStage == "fetching_title" && title == "" {
-		title = "Fetching title..."
-	}
-
-	switch w.CurrentStage {
-	case "completed":
-		if w.CurrentJob.Error != nil {
-			return w.ProgressView.RenderFailed(w.CurrentJob.Error, w.CurrentJob.Title)
+	if w.CurrentJobIndex >= w.TotalJobs {
+		// This can happen if all jobs are processed and we are in the completed stage
+		if w.CurrentStage == "completed" {
+			// Check if any job failed to display a general error message
+			for _, job := range w.Jobs {
+				if job.Error != nil {
+					return w.ProgressView.RenderOverallFailure(w.Jobs)
+				}
+			}
+			return w.ProgressView.RenderCompleted()
 		}
+		return "Processing complete. Quitting..." // Or some other final state before quit
+	}
+
+	currentJob := w.Jobs[w.CurrentJobIndex]
+	title := currentJob.Title
+
+	switch w.CurrentStage { // This stage reflects the current *overall* step for the current job
+	case "completed": // Overall completion, all jobs done
+		// This case in View might be tricky if CurrentJobIndex is already past TotalJobs.
+		// The logic above (CurrentJobIndex >= TotalJobs) handles the final screen better.
+		// For individual job success that leads to this, it's handled by advancing index.
 		return w.ProgressView.RenderCompleted()
-	case "failed":
-		return w.ProgressView.RenderFailed(w.CurrentJob.Error, w.CurrentJob.Title)
+	case "failed": // A specific job failed, or overall failure
+		// If CurrentJobIndex is valid, show specific job failure
+		if w.CurrentJobIndex < w.TotalJobs && currentJob.Error != nil {
+			return w.ProgressView.RenderFailed(currentJob.Error, currentJob.Title)
+		}
+		// Otherwise, it might be a more general failure or end of batch with errors.
+		return w.ProgressView.RenderOverallFailure(w.Jobs)
 	case "fetching_title":
-		// Use 0, 1 for current/total jobs as it's a single job
-		return w.ProgressView.RenderDownloading(0, 1, title) // Show "Fetching title..."
+		jobTitle := currentJob.Title
+		if jobTitle == "" {
+			jobTitle = "Fetching title..."
+		}
+		return w.ProgressView.RenderDownloading(w.CurrentJobIndex, w.TotalJobs, jobTitle)
 	case "downloading":
-		return w.ProgressView.RenderDownloading(0, 1, title)
+		return w.ProgressView.RenderDownloading(w.CurrentJobIndex, w.TotalJobs, title)
 	case "processing":
-		return w.ProgressView.RenderProcessing(0, 1, w.RawVTTDir) // RenderProcessing might need job title too eventually
+		return w.ProgressView.RenderProcessing(w.CurrentJobIndex, w.TotalJobs, w.RawVTTDir)
 	default:
-		return "Unknown state"
+		return fmt.Sprintf("Unknown state: %s, Job: %d/%d", w.CurrentStage, w.CurrentJobIndex+1, w.TotalJobs)
 	}
 }
 
@@ -62,53 +80,51 @@ func (w WorkflowState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return w, tea.Quit
 	}
 
-	if w.CurrentJob == nil && w.InitialURL == "" {
-		// Nothing to do if no job is set up and no initial URL to create one
-		// This case should ideally not be hit if NewWorkflow is used correctly
-		return w, tea.Quit
-	}
-
-	// Initialize CurrentJob if it's nil but InitialURL is present
-	// This path might be taken if the tea.Model is not initialized via NewWorkflow
-	// but directly, which is less likely with current main.go structure.
-	if w.CurrentJob == nil && w.InitialURL != "" {
-		w.CurrentJob = &TranscriptJob{URL: w.InitialURL, Status: "pending"}
-		w.CurrentStage = "fetching_title"
-		// Cmd to fetch title will be triggered by Init or next appropriate step
+	if w.TotalJobs == 0 {
+		return w, tea.Quit // Should have been caught by Init, but as a safeguard
 	}
 
 	switch msg := msg.(type) {
 	case progress.FrameMsg:
-		_, cmd := w.ProgressView.UpdateProgress(msg)
+		progModel, cmd := w.ProgressView.UpdateProgress(msg)
+		w.ProgressView.Progress = progModel // Update the progress model on w
 		return w, cmd
 
 	case tea.WindowSizeMsg:
-		// This ensures the progress bar re-renders correctly on resize.
 		return w, func() tea.Msg { return progress.FrameMsg{} }
 
 	case TitleFetchResult:
-		if w.CurrentJob == nil || msg.URL != w.CurrentJob.URL {
-			// Message for a different/old job, ignore
-			return w, nil
-		}
-		if msg.Err != nil {
-			// If fetching title failed critically (e.g., yt-dlp command error)
-			w.CurrentJob.Error = msg.Err
-			w.CurrentJob.Status = "failed"
-			w.CurrentStage = "failed"
-			// Even if title fetch fails, we go to finalizeWorkflow to show completion/error
-			return w.finalizeWorkflow()
+		jobIdx := -1
+		for i := range w.Jobs {
+			if w.Jobs[i].URL == msg.URL {
+				jobIdx = i
+				break
+			}
 		}
 
-		w.CurrentJob.Title = msg.Title
-		if w.CurrentJob.Title == "" { // If title is empty string (e.g. yt-dlp returned empty)
-			w.CurrentJob.Title = ExtractVideoID(w.CurrentJob.URL) // Fallback to ID
+		if jobIdx == -1 || jobIdx != w.CurrentJobIndex { // Should not happen if logic is correct
+			return w, nil // Message for a job we aren't expecting or is old
 		}
-		w.CurrentJob.Status = "downloading_subtitles"
-		w.CurrentStage = "downloading"
+
+		currentJob := &w.Jobs[jobIdx]
+		if msg.Err != nil {
+			currentJob.Error = msg.Err
+			currentJob.Status = "failed"
+			// Decide if we stop all or continue with next job
+			// For now, let's mark as failed and try to move to the next job
+			return w.handleJobCompletion(true) // True indicates current job had an error
+		}
+
+		currentJob.Title = msg.Title
+		if currentJob.Title == "" { // Fallback if yt-dlp provides empty title
+			currentJob.Title = ExtractVideoID(currentJob.URL)
+		}
+		currentJob.Status = "downloading_subtitles"
+		w.CurrentStage = "downloading" // Set overall stage for this job processing
 
 		return w, func() tea.Msg {
-			err := DownloadSubtitles(w.CurrentJob.URL, w.RawVTTDir)
+			err := DownloadSubtitles(currentJob.URL, w.RawVTTDir)
+			// Include URL in DownloadCompletedMsg if needed for context, though not strictly now
 			return DownloadCompletedMsg{Err: err}
 		}
 
@@ -119,8 +135,6 @@ func (w WorkflowState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return w.handleProcessingCompleted(msg.Err)
 
 	case WorkflowCompletedMsg:
-		// This message signals that finalizeWorkflow has done its part,
-		// and we can now prepare to quit.
 		w.ReadyToQuit = true
 		return w, nil
 
@@ -137,63 +151,94 @@ func (w WorkflowState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// handleDownloadCompleted handles the state transition after a download completes
-func (w WorkflowState) handleDownloadCompleted(err error) (tea.Model, tea.Cmd) {
-	if w.CurrentJob == nil {
-		return w, tea.Quit // Should not happen
+// handleJobCompletion is a new helper to manage moving to the next job or finalizing
+func (w WorkflowState) handleJobCompletion(currentJobFailed bool) (tea.Model, tea.Cmd) {
+	if currentJobFailed {
+		// The job's error and status are already set
 	}
 
-	if err != nil {
-		w.CurrentJob.Error = err
-		w.CurrentJob.Status = "failed"
-		w.CurrentStage = "failed"
+	w.CurrentJobIndex++
+
+	if w.CurrentJobIndex >= w.TotalJobs {
 		return w.finalizeWorkflow()
 	}
 
-	w.CurrentJob.Status = "processing_transcript"
-	w.CurrentStage = "processing"
+	// Start next job: Fetch its title
+	nextJob := &w.Jobs[w.CurrentJobIndex]
+	nextJob.Status = "fetching_title"
+	w.CurrentStage = "fetching_title"
+
+	// Calculate progress for display so far
+	// Each job contributes 1/TotalJobs to progress.
+	// For simplicity, let's say completing a job (even if failed) counts as its portion done for overall batch progress.
+	percentComplete := float64(w.CurrentJobIndex) / float64(w.TotalJobs)
 
 	return w, tea.Batch(
-		ProcessTranscript(w.RawVTTDir, w.CleanedDir),  // This is already a tea.Cmd
-		w.ProgressView.SetProgress(0.5),               // 50% after download
-		func() tea.Msg { return progress.FrameMsg{} }, // Trigger a progress bar update
+		w.ProgressView.SetProgress(percentComplete),
+		func() tea.Msg { return progress.FrameMsg{} },
+		func() tea.Msg {
+			title, err := FetchTitle(nextJob.URL)
+			return TitleFetchResult{URL: nextJob.URL, Title: title, Err: err}
+		},
+	)
+}
+
+// handleDownloadCompleted handles the state transition after a download completes
+func (w WorkflowState) handleDownloadCompleted(err error) (tea.Model, tea.Cmd) {
+	if w.CurrentJobIndex >= w.TotalJobs {
+		return w, tea.Quit
+	} // Safety check
+
+	currentJob := &w.Jobs[w.CurrentJobIndex]
+	if err != nil {
+		currentJob.Error = err
+		currentJob.Status = "failed"
+		return w.handleJobCompletion(true)
+	}
+
+	currentJob.Status = "processing_transcript"
+	w.CurrentStage = "processing"
+
+	// Calculate progress: index * (1/total) for completed jobs + 0.5 * (1/total) for current download part
+	percentComplete := (float64(w.CurrentJobIndex) + 0.5) / float64(w.TotalJobs)
+	if w.TotalJobs == 0 {
+		percentComplete = 0
+	} // Avoid division by zero
+
+	return w, tea.Batch(
+		ProcessTranscript(w.RawVTTDir, w.CleanedDir),
+		w.ProgressView.SetProgress(percentComplete),
+		func() tea.Msg { return progress.FrameMsg{} },
 	)
 }
 
 // handleProcessingCompleted handles the state transition after processing completes
 func (w WorkflowState) handleProcessingCompleted(err error) (tea.Model, tea.Cmd) {
-	if w.CurrentJob == nil {
-		return w, tea.Quit // Should not happen
-	}
+	if w.CurrentJobIndex >= w.TotalJobs {
+		return w, tea.Quit
+	} // Safety check
 
+	currentJob := &w.Jobs[w.CurrentJobIndex]
 	if err != nil {
-		w.CurrentJob.Error = err
-		w.CurrentJob.Status = "failed"
-		w.CurrentStage = "failed"
-		// Even on error, we finalize to show the error message
+		currentJob.Error = err
+		currentJob.Status = "failed"
+		return w.handleJobCompletion(true)
 	} else {
-		w.CurrentJob.Status = "completed"
-		// CurrentStage will be set to "completed" by finalizeWorkflow
+		currentJob.Status = "completed"
+		// Add to list of successfully processed files if needed, e.g. currentJob.ProcessedFile
+		// w.ProcessedFiles = append(w.ProcessedFiles, currentJob.ProcessedFile)
+		return w.handleJobCompletion(false)
 	}
-
-	// Whether success or failure in processing, we finalize the workflow.
-	// finalizeWorkflow will set progress to 1.0 and stage to "completed" or reflect error.
-	return w.finalizeWorkflow()
 }
 
-// finalizeWorkflow handles the completion of the job (success or failure)
+// finalizeWorkflow handles the completion of all jobs
 func (w WorkflowState) finalizeWorkflow() (tea.Model, tea.Cmd) {
-	if w.CurrentJob != nil && w.CurrentJob.Error != nil {
-		w.CurrentStage = "failed"
-	} else {
-		w.CurrentStage = "completed"
-	}
+	w.CurrentStage = "completed" // Overall workflow is complete
 
-	// Always set progress to 1.0 at the end, failed or not, it's 100% of this attempt.
 	return w, tea.Batch(
 		w.ProgressView.SetProgress(1.0),
-		func() tea.Msg { return progress.FrameMsg{} },    // Update progress bar view
-		func() tea.Msg { return WorkflowCompletedMsg{} }, // Signal workflow (job) attempt is done
+		func() tea.Msg { return progress.FrameMsg{} },
+		func() tea.Msg { return WorkflowCompletedMsg{} },
 	)
 }
 

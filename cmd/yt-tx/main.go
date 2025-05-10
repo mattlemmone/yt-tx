@@ -56,8 +56,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	firstURL := urls[0]
-
 	// Clean or create directories
 	if cleanDirs {
 		if err := internal.CleanDirectories(rawVTTDir, cleanedDir); err != nil {
@@ -74,7 +72,7 @@ func main() {
 
 	// Create a new program
 	p := tea.NewProgram(TranscriptApp{
-		workflow: internal.NewWorkflow(firstURL, rawVTTDir, cleanedDir),
+		workflow: internal.NewWorkflow(urls, rawVTTDir, cleanedDir), // Pass the full urls slice
 	})
 
 	// Run the program
