@@ -68,13 +68,13 @@ This project no longer uses inline bash scripting for transcript cleaning and de
 
 ## Running Tests
 
-Unit tests are provided for the transcript cleaning and deduplication logic. To run the tests:
+Unit tests are provided for the core logic, including transcript cleaning and processing. To run all tests in the project:
 
-```
-go test
+```bash
+go test ./...
 ```
 
-This will run all tests in `main_test.go`.
+This command will discover and run tests in the current directory and all sub-directories.
 
 ## License
 
