@@ -40,15 +40,19 @@ func DownloadSubtitles(url, outputDir string) error {
 }
 
 // ExtractVideoID extracts the video ID from a YouTube URL
-func ExtractVideoID(url string) string {
+func ExtractVideoID(url string) (string, error) {
+	if url == "" {
+		return "", fmt.Errorf("URL cannot be empty")
+	}
+
 	// Check for standard YouTube URL format (v= parameter)
 	if idx := strings.Index(url, "v="); idx != -1 {
 		vidID := url[idx+2:] // Get everything after v=
 		if ampIdx := strings.Index(vidID, "&"); ampIdx != -1 {
 			// Cut at first ampersand if there are other parameters
-			return vidID[:ampIdx]
+			return vidID[:ampIdx], nil
 		}
-		return vidID
+		return vidID, nil
 	}
 
 	// Check for youtu.be format
@@ -56,25 +60,22 @@ func ExtractVideoID(url string) string {
 		vidID := url[idx+len("youtu.be/"):]
 		if questionIdx := strings.Index(vidID, "?"); questionIdx != -1 {
 			// Cut at question mark if there are query parameters
-			return vidID[:questionIdx]
+			return vidID[:questionIdx], nil
 		}
-		return vidID
+		return vidID, nil
 	}
 
 	// Check for embed format
 	if idx := strings.Index(url, "/embed/"); idx != -1 {
 		vidID := url[idx+len("/embed/"):]
 		if questionIdx := strings.Index(vidID, "?"); questionIdx != -1 {
-			return vidID[:questionIdx]
+			return vidID[:questionIdx], nil
 		}
-		return vidID
+		return vidID, nil
 	}
 
-	// If we can't extract cleanly, just return a shortened URL or the original if short
-	if len(url) > 30 {
-		return url[:27] + "..."
-	}
-	return url
+	// If we can't extract cleanly, it's not a recognized YouTube URL
+	return "", fmt.Errorf("not a recognized YouTube URL: %s", url)
 }
 
 var langAndVttExtRegex = regexp.MustCompile(`(?:\.[a-zA-Z]{2,3})?\.vtt$`) // Matches .vtt and optional .lang.vtt

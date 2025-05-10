@@ -117,7 +117,14 @@ func (w WorkflowState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		currentJob.Title = msg.Title
 		if currentJob.Title == "" { // Fallback if yt-dlp provides empty title
-			currentJob.Title = ExtractVideoID(currentJob.URL)
+			videoID, err := ExtractVideoID(currentJob.URL)
+			if err != nil {
+				// If fallback ID extraction also fails, mark job as failed
+				currentJob.Error = fmt.Errorf("title was empty and ID extraction failed: %w", err)
+				currentJob.Status = "failed"
+				return w.handleJobCompletion(true) // True indicates current job had an error
+			}
+			currentJob.Title = videoID // Use extracted ID as title
 		}
 		currentJob.Status = "downloading_subtitles"
 		w.CurrentStage = "downloading" // Set overall stage for this job processing
@@ -249,5 +256,22 @@ func ProcessTranscript(rawVTTDir, cleanedDir string) tea.Cmd {
 		// Simulate processing by returning a success message immediately.
 		// In a real scenario, this would involve file operations and could return an error.
 		return ProcessingCompletedMsg{Err: nil} // TODO: Implement actual processing logic
+	}
+}
+
+func (wf *WorkflowState) fetchTitleCmd(url string) tea.Cmd {
+	return func() tea.Msg {
+		title, err := FetchTitle(url) // Actual function from youtube.go
+		if err != nil {
+			// Fallback to ExtractVideoID if FetchTitle fails
+			videoID, idErr := ExtractVideoID(url)
+			if idErr != nil {
+				// If ExtractVideoID also fails, return that error
+				return TitleFetchResult{URL: url, Title: "", Err: fmt.Errorf("title fetch and ID extraction failed: %w", idErr)}
+			}
+			// If ExtractVideoID succeeds, use it as the title (it might just be an ID)
+			return TitleFetchResult{URL: url, Title: videoID, Err: nil}
+		}
+		return TitleFetchResult{URL: url, Title: title, Err: nil}
 	}
 }

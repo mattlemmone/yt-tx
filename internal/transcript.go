@@ -61,7 +61,7 @@ func StripHTMLTags(s string) string {
 
 // RemoveVTTArtifacts applies the cleaning logic to a slice of lines to remove VTT artifacts.
 func RemoveVTTArtifacts(lines []string) []string {
-	var outLines []string
+	outLines := []string{} // Initialize as empty slice instead of nil
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || line == "WEBVTT" {

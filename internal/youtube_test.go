@@ -4,37 +4,35 @@ import "testing"
 
 func TestExtractVideoID(t *testing.T) {
 	tests := []struct {
-		name string
-		url  string
-		want string
+		name    string
+		url     string
+		want    string
+		wantErr bool
 	}{
-		{"standard URL", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"},
-		{"standard URL with other params", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10s", "dQw4w9WgXcQ"},
-		{"shortened URL", "https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"},
-		{"shortened URL with params", "https://youtu.be/dQw4w9WgXcQ?t=10s", "dQw4w9WgXcQ"},
-		{"shortened URL no www", "http://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"},
-		{"embedded URL", "https://www.youtube.com/embed/dQw4w9WgXcQ", "dQw4w9WgXcQ"},
-		{"embedded URL with params", "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "dQw4w9WgXcQ"},
-		{"no video ID param", "https://www.youtube.com/", "https://www.youtube.com/"},
-		{"malformed URL with v=", "htps:/www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"},
-		{"malformed URL no v=, triggers shortening", "htps:/www.youtube.com/watch?id=dQw4w9WgXcQ", "htps:/www.youtube.com/watch..."},
-		{"empty URL", "", ""},
-		{"very long non-youtube URL, triggers shortening", "http://example.com/this/is/a/very/long/url/that/is/not/youtube/and/longer/than/30chars", "http://example.com/this/is/a..."},
-		{"url exactly 30 chars, no shortening", "123456789012345678901234567890", "123456789012345678901234567890"},
-		{"url 31 chars, shortening", "1234567890123456789012345678901", "123456789012345678901234567..."},
+		{"standard URL", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ", false},
+		{"standard URL with other params", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10s", "dQw4w9WgXcQ", false},
+		{"shortened URL", "https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ", false},
+		{"shortened URL with params", "https://youtu.be/dQw4w9WgXcQ?t=10s", "dQw4w9WgXcQ", false},
+		{"shortened URL no www", "http://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ", false},
+		{"embedded URL", "https://www.youtube.com/embed/dQw4w9WgXcQ", "dQw4w9WgXcQ", false},
+		{"embedded URL with params", "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "dQw4w9WgXcQ", false},
+		{"no video ID param (not a valid video watch/embed/short URL)", "https://www.youtube.com/", "", true},
+		{"malformed URL with v= (still extracts if v= is present)", "htps:/www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ", false},
+		{"malformed URL no v= (not a YouTube URL)", "htps:/www.youtube.com/watch?id=dQw4w9WgXcQ", "", true},
+		{"empty URL", "", "", true},
+		{"very long non-youtube URL", "http://example.com/this/is/a/very/long/url/that/is/not/youtube/and/longer/than/30chars", "", true},
+		{"url exactly 30 chars, not youtube", "123456789012345678901234567890", "", true},
+		{"url 31 chars, not youtube", "1234567890123456789012345678901", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ExtractVideoID(tt.url)
-			if tt.name == "very long non-youtube URL, triggers shortening" {
-				t.Logf("Test: %s\nInput URL: %q\nGot: %q (len %d)\nWant: %q (len %d)\nGot (bytes): %v\nWant (bytes): %v",
-					tt.name, tt.url,
-					got, len(got),
-					tt.want, len(tt.want),
-					[]byte(got), []byte(tt.want))
+			got, err := ExtractVideoID(tt.url)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ExtractVideoID() error = %v, wantErr %v", err, tt.wantErr)
+				return
 			}
 			if got != tt.want {
-				t.Errorf("ExtractVideoID() = %q, want %q", got, tt.want)
+				t.Errorf("ExtractVideoID() got = %q, want %q", got, tt.want)
 			}
 		})
 	}
