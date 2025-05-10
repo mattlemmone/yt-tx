@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -27,17 +28,35 @@ func FetchTitle(url string) (string, error) {
 }
 
 // DownloadSubtitles downloads subtitles for a YouTube video using yt-dlp
-func DownloadSubtitles(url, outputDir string) error {
+// It now accepts videoID to confirm file creation.
+func DownloadSubtitles(url, videoID, outputDir string) error {
 	// Output template uses video ID for the raw VTT filename for predictability.
 	// yt-dlp will add the .vtt extension.
 	outputTemplate := filepath.Join(outputDir, "%(id)s")
 
-	return exec.Command("yt-dlp", "--quiet", url,
+	cmd := exec.Command("yt-dlp", "--quiet", url,
 		"--skip-download", "--write-sub", "--write-auto-sub",
 		"--sub-lang", "en", "--convert-subs", "vtt",
 		"--restrict-filenames",
 		"-o", outputTemplate,
-	).Run()
+	)
+	err := cmd.Run()
+	if err != nil {
+		return err // yt-dlp command itself failed
+	}
+
+	// After yt-dlp command runs, verify the expected file was created
+	expectedVTTPath := filepath.Join(outputDir, videoID+".vtt")
+	if _, statErr := os.Stat(expectedVTTPath); os.IsNotExist(statErr) {
+		// yt-dlp ran successfully but the file doesn't exist.
+		// This can happen if no subtitles were found.
+		return fmt.Errorf("yt-dlp completed but subtitle file %s was not created (likely no subtitles found for lang 'en')", expectedVTTPath)
+	} else if statErr != nil {
+		// Some other error trying to stat the file (e.g., permissions)
+		return fmt.Errorf("error checking for subtitle file %s after download: %w", expectedVTTPath, statErr)
+	}
+
+	return nil // File exists
 }
 
 // ExtractVideoID extracts the video ID from a YouTube URL

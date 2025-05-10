@@ -55,7 +55,7 @@ func runWorker(id int, jobs []TranscriptJob, jobQueue chan int, resultsChan chan
 		// resultsChan <- JobProcessingResult{OriginalJobIndex: jobIndex, ProcessedJob: job} // Update UI
 
 		// 3. Download Subtitles (will be saved as <videoID>.vtt)
-		err = DownloadSubtitles(job.URL, rawVTTDir) // Uses videoID internally via yt-dlp template
+		err = DownloadSubtitles(job.URL, videoID, rawVTTDir) // Pass videoID and use rawVTTDir from runWorker's params
 		if err != nil {
 			job.Error = fmt.Errorf("failed to download subtitles: %w", err)
 			job.Status = "failed"
