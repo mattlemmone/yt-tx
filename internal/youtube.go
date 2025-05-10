@@ -46,10 +46,10 @@ func DownloadSubtitles(url, videoID, outputDir string) error {
 	}
 
 	// After yt-dlp command runs, verify the expected file was created
-	expectedVTTPath := filepath.Join(outputDir, videoID+".vtt")
+	// It should be named <videoID>.en.vtt when --sub-lang en and --convert-subs vtt are used.
+	expectedVTTPath := filepath.Join(outputDir, videoID+".en.vtt")
 	if _, statErr := os.Stat(expectedVTTPath); os.IsNotExist(statErr) {
 		// yt-dlp ran successfully but the file doesn't exist.
-		// This can happen if no subtitles were found.
 		return fmt.Errorf("yt-dlp completed but subtitle file %s was not created (likely no subtitles found for lang 'en')", expectedVTTPath)
 	} else if statErr != nil {
 		// Some other error trying to stat the file (e.g., permissions)

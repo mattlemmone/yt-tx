@@ -120,14 +120,13 @@ func SanitizeFilename(name string) string {
 }
 
 // GetLocalVTTPathByVideoID constructs the path for a raw VTT file based on its video ID.
-// Assumes VTT files are named <videoID>.vtt.
+// Assumes VTT files are named <videoID>.en.vtt when downloaded for English.
 func GetLocalVTTPathByVideoID(videoID string, rawVTTDir string) (string, error) {
 	if videoID == "" {
 		return "", fmt.Errorf("videoID cannot be empty when constructing raw VTT path")
 	}
-	// No sanitization needed for videoID as it's usually filesystem-safe.
-	// yt-dlp saves it as <videoID>.vtt
-	return filepath.Join(rawVTTDir, videoID+".vtt"), nil
+	// yt-dlp, with --sub-lang en --convert-subs vtt, saves as <videoID>.en.vtt
+	return filepath.Join(rawVTTDir, videoID+".en.vtt"), nil
 }
 
 // GetCleanedFilePathByTitle constructs the path for a cleaned transcript file based on the video title.
