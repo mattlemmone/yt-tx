@@ -27,12 +27,25 @@ It's just a yt-dlp wrapper.
 
 - `-raw_vtt_dir` Directory for downloaded VTT files (default: raw_vtt)
 - `-cleaned_dir` Directory for cleaned transcript files (default: cleaned)
+- `-p` Number of parallel workers to process videos (default: 1, for sequential processing)
 
 Example:
 
 ```bash
-./yt-tx -raw_vtt_dir=myvtt -cleaned_dir=mycleaned \
-  https://www.youtube.com/watch?v=<id1>
+# Process sequentially
+./yt-tx https://www.youtube.com/watch?v=<id1>
+
+# Process with 4 parallel workers
+./yt-tx -p 4 \
+  https://www.youtube.com/watch?v=<id1> \
+  https://www.youtube.com/watch?v=<id2> \
+  https://www.youtube.com/watch?v=<id3> \
+  https://www.youtube.com/watch?v=<id4>
+
+# Customize directories and process with 2 workers
+./yt-tx -raw_vtt_dir=my_vtt_files -cleaned_dir=my_cleaned_transcripts -p 2 \
+  https://www.youtube.com/watch?v=<id1> \
+  https://www.youtube.com/watch?v=<id2>
 ```
 
 Processed files are written to two directories in your working folder:
