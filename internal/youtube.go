@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -52,7 +53,7 @@ func ExtractVideoID(url string) string {
 
 	// Check for youtu.be format
 	if idx := strings.Index(url, "youtu.be/"); idx != -1 {
-		vidID := url[idx+9:] // Get everything after youtu.be/
+		vidID := url[idx+len("youtu.be/"):]
 		if questionIdx := strings.Index(vidID, "?"); questionIdx != -1 {
 			// Cut at question mark if there are query parameters
 			return vidID[:questionIdx]
@@ -60,21 +61,26 @@ func ExtractVideoID(url string) string {
 		return vidID
 	}
 
-	// If we can't extract cleanly, just return a shortened URL
+	// Check for embed format
+	if idx := strings.Index(url, "/embed/"); idx != -1 {
+		vidID := url[idx+len("/embed/"):]
+		if questionIdx := strings.Index(vidID, "?"); questionIdx != -1 {
+			return vidID[:questionIdx]
+		}
+		return vidID
+	}
+
+	// If we can't extract cleanly, just return a shortened URL or the original if short
 	if len(url) > 30 {
 		return url[:27] + "..."
 	}
 	return url
 }
 
-// ExtractDisplayTitle gets a user-friendly title from a filename.
-func ExtractDisplayTitle(filename string) string {
-	base := strings.TrimSuffix(filename, ".vtt")
-	base = strings.TrimSuffix(base, ".en")
+var langAndVttExtRegex = regexp.MustCompile(`(?:\.[a-zA-Z]{2,3})?\.vtt$`) // Matches .vtt and optional .lang.vtt
 
-	titleParts := strings.SplitN(base, "--", 2)
-	if len(titleParts) > 1 {
-		return titleParts[1]
-	}
-	return base
+// ExtractDisplayTitle gets a user-friendly title from a filename by stripping known extensions.
+// It does not handle splitting of ID--Title structures; that should be done by the caller if needed.
+func ExtractDisplayTitle(filename string) string {
+	return langAndVttExtRegex.ReplaceAllString(filename, "")
 }

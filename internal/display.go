@@ -54,7 +54,7 @@ func (v ProgressView) RenderOverallFailure(jobs []TranscriptJob) string {
 func (v ProgressView) RenderDownloading(currentJobIndex, totalJobs int, title string) string {
 	header := fmt.Sprintf("[%d/%d] ", currentJobIndex+1, totalJobs)
 
-	if title == "" {
+	if title == "" || title == "Fetching title..." {
 		header += "Fetching title..."
 	} else {
 		header += fmt.Sprintf("Downloading subtitles for: %s", title)

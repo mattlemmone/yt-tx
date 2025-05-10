@@ -7,15 +7,20 @@ import (
 
 // DedupeLines removes consecutive duplicate lines from a slice of strings.
 func DedupeLines(lines []string) []string {
-	var outLines []string
-	prev := ""
-	for _, line := range lines {
-		if line != "" && line != prev {
-			outLines = append(outLines, line)
-			prev = line
+	if len(lines) == 0 {
+		return []string{} // Ensure non-nil empty slice
+	}
+	// Allocate with a reasonable capacity if lines is not empty
+	result := make([]string, 0, len(lines))
+	result = append(result, lines[0]) // Add the first line
+
+	for i := 1; i < len(lines); i++ {
+		// Add current line only if it's different from the last line added to result
+		if lines[i] != result[len(result)-1] {
+			result = append(result, lines[i])
 		}
 	}
-	return outLines
+	return result
 }
 
 // IsNumber checks if a string consists only of digits.
