@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/charmbracelet/bubbles/progress"
@@ -50,6 +51,31 @@ func runWorker(id int, jobs []TranscriptJob, jobQueue chan int, resultsChan chan
 		if job.Title == "" {
 			job.Title = videoID
 		}
+
+		// Check if cleaned file already exists
+		expectedCleanedPath, pathErr := GetCleanedFilePathByTitle(job.Title, cleanedDir)
+		if pathErr != nil {
+			job.Error = fmt.Errorf("failed to determine cleaned file path: %w", pathErr)
+			job.Status = "failed"
+			resultsChan <- JobProcessingResult{OriginalJobIndex: jobIndex, ProcessedJob: job, Err: job.Error}
+			continue
+		}
+
+		if _, statErr := os.Stat(expectedCleanedPath); statErr == nil {
+			// File exists, skip processing
+			job.Status = "skipped (exists)"
+			job.ProcessedFile = expectedCleanedPath
+			job.Error = nil // Ensure no error for skipped jobs
+			resultsChan <- JobProcessingResult{OriginalJobIndex: jobIndex, ProcessedJob: job, Err: nil}
+			continue // Move to the next job
+		} else if !os.IsNotExist(statErr) {
+			// os.Stat failed for a reason other than file not existing (e.g., permissions)
+			job.Error = fmt.Errorf("error checking existing cleaned file %s: %w", expectedCleanedPath, statErr)
+			job.Status = "failed"
+			resultsChan <- JobProcessingResult{OriginalJobIndex: jobIndex, ProcessedJob: job, Err: job.Error}
+			continue
+		}
+		// If os.IsNotExist(statErr) is true, proceed.
 
 		job.Status = "downloading_subtitles"
 		// resultsChan <- JobProcessingResult{OriginalJobIndex: jobIndex, ProcessedJob: job} // Update UI
