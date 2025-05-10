@@ -58,8 +58,8 @@ func ReadTextFile(path string) (string, error) {
 }
 
 // EnsureDirectories ensures that the required directories exist.
-func EnsureDirectories(rawVTTDir, cleanedDir string) error {
-	if err := os.MkdirAll(rawVTTDir, 0755); err != nil {
+func EnsureDirectories(tempDir, cleanedDir string) error {
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(cleanedDir, 0755); err != nil {
@@ -68,15 +68,13 @@ func EnsureDirectories(rawVTTDir, cleanedDir string) error {
 	return nil
 }
 
-// CleanDirectories removes all files from the directories to avoid processing old files
-func CleanDirectories(rawVTTDir, cleanedDir string) error {
-	if err := os.RemoveAll(rawVTTDir); err != nil {
+// CleanDirectories removes all files from the temporary directory.
+// The cleaned directory is no longer wiped.
+func CleanDirectories(tempDir, cleanedDir string) error {
+	if err := os.RemoveAll(tempDir); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(cleanedDir); err != nil {
-		return err
-	}
-	if err := EnsureDirectories(rawVTTDir, cleanedDir); err != nil {
+	if err := EnsureDirectories(tempDir, cleanedDir); err != nil {
 		return err
 	}
 	return nil
@@ -121,12 +119,12 @@ func SanitizeFilename(name string) string {
 
 // GetLocalVTTPathByVideoID constructs the path for a raw VTT file based on its video ID.
 // Assumes VTT files are named <videoID>.en.vtt when downloaded for English.
-func GetLocalVTTPathByVideoID(videoID string, rawVTTDir string) (string, error) {
+func GetLocalVTTPathByVideoID(videoID string, tempDir string) (string, error) {
 	if videoID == "" {
 		return "", fmt.Errorf("videoID cannot be empty when constructing raw VTT path")
 	}
 	// yt-dlp, with --sub-lang en --convert-subs vtt, saves as <videoID>.en.vtt
-	return filepath.Join(rawVTTDir, videoID+".en.vtt"), nil
+	return filepath.Join(tempDir, videoID+".en.vtt"), nil
 }
 
 // GetCleanedFilePathByTitle constructs the path for a cleaned transcript file based on the video title.

@@ -25,7 +25,6 @@ It's just a yt-dlp wrapper.
 
 ### Flags
 
-- `-raw_vtt_dir` Directory for downloaded VTT files (default: raw_vtt)
 - `-cleaned_dir` Directory for cleaned transcript files (default: cleaned)
 - `-p` Number of parallel workers to process videos (default: 1, for sequential processing)
 
@@ -42,24 +41,25 @@ Example:
   https://www.youtube.com/watch?v=<id3> \
   https://www.youtube.com/watch?v=<id4>
 
-# Customize directories and process with 2 workers
-./yt-tx -raw_vtt_dir=my_vtt_files -cleaned_dir=my_cleaned_transcripts -p 2 \
+# Customize output directory and process with 2 workers
+./yt-tx -cleaned_dir=my_cleaned_transcripts -p 2 \
   https://www.youtube.com/watch?v=<id1> \
   https://www.youtube.com/watch?v=<id2>
 ```
 
-Processed files are written to two directories in your working folder:
+Processed files involve two main directories in your working folder:
 
-- `raw_vtt/` → downloaded `.vtt` files
-- `cleaned/` → `.clean.txt` files (cleaned and deduplicated)
+- `tmp/` → temporary directory for downloaded `.vtt` files (cleaned after each run)
+- `cleaned/` → final `.txt` files (cleaned and deduplicated transcripts)
 
 ## Directory Structure
 
 ```text
-├── main.go
-├── yt-tx               # built binary
-├── raw_vtt/           # downloaded .vtt files
-└── cleaned/           # final .clean.txt files
+├── cmd/yt-tx/main.go  # Main application
+├── internal/          # Core logic (files, youtube, transcript, etc.)
+├── yt-tx              # built binary
+├── tmp/               # temporary .vtt files (cleaned after run)
+└── cleaned/           # final .txt files
 ```
 
 ## Transcript Cleaning and Deduplication

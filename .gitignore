@@ -2,7 +2,7 @@
 yt-tx
 
 # Working directories
-raw_vtt/
+tmp/
 cleaned/
 
 # VTT and text files

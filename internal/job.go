@@ -41,7 +41,7 @@ type WorkflowState struct {
 	ProgressView    ProgressView
 	ReadyToQuit     bool
 	ProcessedFiles  []string
-	RawVTTDir       string
+	TempDir         string
 	CleanedDir      string
 	ParallelWorkers int // Number of workers for parallel processing
 
@@ -53,7 +53,7 @@ type WorkflowState struct {
 }
 
 // NewWorkflow creates a new workflow with initial state for the given URLs
-func NewWorkflow(urls []string, rawVTTDir, cleanedDir string, parallelWorkers int) WorkflowState {
+func NewWorkflow(urls []string, tempDir, cleanedDir string, parallelWorkers int) WorkflowState {
 	jobs := make([]TranscriptJob, len(urls))
 	for i, url := range urls {
 		jobs[i] = TranscriptJob{
@@ -75,7 +75,7 @@ func NewWorkflow(urls []string, rawVTTDir, cleanedDir string, parallelWorkers in
 		ProgressView:    NewProgressView(),
 		ReadyToQuit:     false,
 		ProcessedFiles:  []string{},
-		RawVTTDir:       rawVTTDir,
+		TempDir:         tempDir,
 		CleanedDir:      cleanedDir,
 		ParallelWorkers: parallelWorkers,
 		// Initialize new fields

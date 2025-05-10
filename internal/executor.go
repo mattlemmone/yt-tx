@@ -17,7 +17,7 @@ func waitForJobResultCmd(resultsChan chan JobProcessingResult) tea.Cmd {
 
 // runWorker is the function executed by each worker goroutine.
 // It processes jobs from the jobQueue and sends results to resultsChan.
-func runWorker(id int, jobs []TranscriptJob, jobQueue chan int, resultsChan chan JobProcessingResult, rawVTTDir, cleanedDir string, wg *sync.WaitGroup) {
+func runWorker(id int, jobs []TranscriptJob, jobQueue chan int, resultsChan chan JobProcessingResult, tempDir, cleanedDir string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for jobIndex := range jobQueue {
 		job := jobs[jobIndex] // Get a copy of the job to work on
@@ -55,7 +55,7 @@ func runWorker(id int, jobs []TranscriptJob, jobQueue chan int, resultsChan chan
 		// resultsChan <- JobProcessingResult{OriginalJobIndex: jobIndex, ProcessedJob: job} // Update UI
 
 		// 3. Download Subtitles (will be saved as <videoID>.vtt)
-		err = DownloadSubtitles(job.URL, videoID, rawVTTDir) // Pass videoID and use rawVTTDir from runWorker's params
+		err = DownloadSubtitles(job.URL, videoID, tempDir) // Pass videoID and use tempDir from runWorker's params
 		if err != nil {
 			job.Error = fmt.Errorf("failed to download subtitles: %w", err)
 			job.Status = "failed"
@@ -66,7 +66,7 @@ func runWorker(id int, jobs []TranscriptJob, jobQueue chan int, resultsChan chan
 		// resultsChan <- JobProcessingResult{OriginalJobIndex: jobIndex, ProcessedJob: job} // Update UI
 
 		// 4. Process Transcript
-		cleanedFile, err := ProcessSingleTranscript(videoID, job.Title, rawVTTDir, cleanedDir)
+		cleanedFile, err := ProcessSingleTranscript(videoID, job.Title, tempDir, cleanedDir)
 		if err != nil {
 			job.Error = fmt.Errorf("failed to process transcript: %w", err)
 			job.Status = "failed"
@@ -88,7 +88,7 @@ func (w WorkflowState) Init() tea.Cmd {
 	if w.ParallelWorkers > 0 {
 		w.wg.Add(w.ParallelWorkers)
 		for i := 0; i < w.ParallelWorkers; i++ {
-			go runWorker(i, w.Jobs, w.jobQueue, w.resultsChan, w.RawVTTDir, w.CleanedDir, w.wg)
+			go runWorker(i, w.Jobs, w.jobQueue, w.resultsChan, w.TempDir, w.CleanedDir, w.wg)
 		}
 
 		// Populate job queue
@@ -263,9 +263,9 @@ func (w WorkflowState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ProcessSingleTranscript takes a videoID and title, finds its raw VTT file,
 // cleans it, and saves it to the cleaned directory.
-func ProcessSingleTranscript(videoID, videoTitle, rawVTTDir, cleanedDir string) (string, error) {
+func ProcessSingleTranscript(videoID, videoTitle, tempDir, cleanedDir string) (string, error) {
 	// 1. Determine the raw VTT file path using videoID
-	rawFilePath, err := GetLocalVTTPathByVideoID(videoID, rawVTTDir)
+	rawFilePath, err := GetLocalVTTPathByVideoID(videoID, tempDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to determine raw VTT file path for video ID %s: %w", videoID, err)
 	}

@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	defaultRawVTTDir  = "raw_vtt"
 	defaultCleanedDir = "cleaned"
+	tempDirName       = "tmp"
 )
 
 // TranscriptApp wraps the workflow
@@ -39,15 +39,11 @@ func (a TranscriptApp) View() string {
 func main() {
 	// Parse command line flags
 	var (
-		rawVTTDir       string
 		cleanedDir      string
-		cleanDirs       bool
 		parallelWorkers int
 	)
 
-	flag.StringVar(&rawVTTDir, "raw_vtt_dir", defaultRawVTTDir, "Directory for downloaded VTT files")
 	flag.StringVar(&cleanedDir, "cleaned_dir", defaultCleanedDir, "Directory for deduplicated transcript files")
-	flag.BoolVar(&cleanDirs, "clean", true, "Clean directories before processing")
 	flag.IntVar(&parallelWorkers, "p", 1, "Number of parallel workers to process videos")
 	flag.Parse()
 
@@ -58,23 +54,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Clean or create directories
-	if cleanDirs {
-		if err := internal.CleanDirectories(rawVTTDir, cleanedDir); err != nil {
-			fmt.Printf("Error cleaning directories: %v\n", err)
-			os.Exit(1)
-		}
-	} else {
-		// Just ensure directories exist
-		if err := internal.EnsureDirectories(rawVTTDir, cleanedDir); err != nil {
-			fmt.Printf("Error creating directories: %v\n", err)
-			os.Exit(1)
-		}
+	// Create/clean directories
+	if err := internal.CleanDirectories(tempDirName, cleanedDir); err != nil {
+		fmt.Printf("Error preparing directories: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Create a new program
 	p := tea.NewProgram(TranscriptApp{
-		workflow: internal.NewWorkflow(urls, rawVTTDir, cleanedDir, parallelWorkers), // Pass the full urls slice
+		workflow: internal.NewWorkflow(urls, tempDirName, cleanedDir, parallelWorkers), // Pass the full urls slice
 	})
 
 	// Run the program

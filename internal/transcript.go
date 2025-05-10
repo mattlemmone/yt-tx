@@ -107,8 +107,8 @@ func SaveCleanedTranscript(vttPath, cleanedDir string) error {
 }
 
 // GetNewestVTTPattern returns a glob pattern for finding VTT files
-func GetNewestVTTPattern(rawVTTDir string) string {
-	return filepath.Join(rawVTTDir, "*.vtt")
+func GetNewestVTTPattern(tempDir string) string {
+	return filepath.Join(tempDir, "*.vtt")
 }
 
 // GetOutputFilePath returns the output path for the cleaned transcript.
