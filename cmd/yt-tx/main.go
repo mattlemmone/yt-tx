@@ -39,14 +39,16 @@ func (a TranscriptApp) View() string {
 func main() {
 	// Parse command line flags
 	var (
-		rawVTTDir  string
-		cleanedDir string
-		cleanDirs  bool
+		rawVTTDir       string
+		cleanedDir      string
+		cleanDirs       bool
+		parallelWorkers int
 	)
 
 	flag.StringVar(&rawVTTDir, "raw_vtt_dir", defaultRawVTTDir, "Directory for downloaded VTT files")
 	flag.StringVar(&cleanedDir, "cleaned_dir", defaultCleanedDir, "Directory for deduplicated transcript files")
 	flag.BoolVar(&cleanDirs, "clean", true, "Clean directories before processing")
+	flag.IntVar(&parallelWorkers, "p", 1, "Number of parallel workers to process videos")
 	flag.Parse()
 
 	urls := flag.Args()
@@ -72,7 +74,7 @@ func main() {
 
 	// Create a new program
 	p := tea.NewProgram(TranscriptApp{
-		workflow: internal.NewWorkflow(urls, rawVTTDir, cleanedDir), // Pass the full urls slice
+		workflow: internal.NewWorkflow(urls, rawVTTDir, cleanedDir, parallelWorkers), // Pass the full urls slice
 	})
 
 	// Run the program

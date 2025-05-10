@@ -28,8 +28,9 @@ func FetchTitle(url string) (string, error) {
 
 // DownloadSubtitles downloads subtitles for a YouTube video using yt-dlp
 func DownloadSubtitles(url, outputDir string) error {
-	// Don't add .vtt extension - yt-dlp will add extensions automatically
-	outputTemplate := filepath.Join(outputDir, "%(id)s--%(title).200s")
+	// Output template uses video ID for the raw VTT filename for predictability.
+	// yt-dlp will add the .vtt extension.
+	outputTemplate := filepath.Join(outputDir, "%(id)s")
 
 	return exec.Command("yt-dlp", "--quiet", url,
 		"--skip-download", "--write-sub", "--write-auto-sub",

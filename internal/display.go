@@ -92,3 +92,31 @@ func (v *ProgressView) UpdateProgress(msg progress.FrameMsg) (progress.Model, te
 	v.Progress = updatedProgress.(progress.Model)
 	return v.Progress, cmd
 }
+
+// RenderJobList renders the overall progress and a list of job statuses.
+func (v ProgressView) RenderJobList(jobs []TranscriptJob, completedCount, totalJobs, numWorkers int) string {
+	var b strings.Builder
+
+	b.WriteString(fmt.Sprintf("Processing %d URLs with %d worker(s)...\n", totalJobs, numWorkers))
+	b.WriteString(v.Progress.View() + "\n") // Display the overall progress bar
+	b.WriteString(fmt.Sprintf("Completed: %d/%d\n\n", completedCount, totalJobs))
+
+	// Display status for each job (e.g., first 10 or a summary)
+	// For now, let's list all of them. Could be verbose for many jobs.
+	for i, job := range jobs {
+		status := job.Status
+		if status == "" {
+			status = "pending"
+		}
+		line := fmt.Sprintf("[%d/%d] %s: %s", i+1, totalJobs, job.URL, status)
+		if job.Title != "" && job.Title != job.URL { // Add title if available and different from URL
+			line = fmt.Sprintf("[%d/%d] %s (%s): %s", i+1, totalJobs, job.URL, job.Title, status)
+		}
+		if job.Error != nil {
+			line += fmt.Sprintf(" (Error: %v)", job.Error)
+		}
+		b.WriteString(line + "\n")
+	}
+
+	return b.String()
+}

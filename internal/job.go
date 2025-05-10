@@ -1,5 +1,7 @@
 package internal
 
+import "sync"
+
 // Messages for job state changes
 type DownloadCompletedMsg struct{ Err error }
 type ProcessingCompletedMsg struct{ Err error }
@@ -23,22 +25,35 @@ type TitleFetchResult struct {
 	Err   error // Added to propagate errors from FetchTitle
 }
 
+// JobProcessingResult holds the outcome of processing a single job by a worker.
+type JobProcessingResult struct {
+	OriginalJobIndex int // To map the result back to the job in WorkflowState.Jobs
+	ProcessedJob     TranscriptJob
+	Err              error // An error that might have occurred during the entire job processing by the worker
+}
+
 // WorkflowState represents the application's workflow state
 type WorkflowState struct {
-	Jobs            []TranscriptJob // Changed back from *TranscriptJob
-	CurrentJobIndex int             // Re-added
-	TotalJobs       int             // Re-added
-	CurrentStage    string          // "fetching_title", "downloading", "processing", "completed", "failed"
+	Jobs            []TranscriptJob
+	CurrentJobIndex int // May become less central, represents last job detailed in UI or for sequential fallback
+	TotalJobs       int
+	CurrentStage    string // Overall workflow stage e.g., "processing_parallel", "completed"
 	ProgressView    ProgressView
-	ReadyToQuit     bool // Manages quit sequence
+	ReadyToQuit     bool
 	ProcessedFiles  []string
 	RawVTTDir       string
 	CleanedDir      string
-	// InitialURL     string // Removed
+	ParallelWorkers int // Number of workers for parallel processing
+
+	// Fields for parallelism
+	jobQueue      chan int                 // Channel of job indices to process
+	resultsChan   chan JobProcessingResult // Channel for workers to send results
+	jobsCompleted int                      // Counter for completed jobs
+	wg            *sync.WaitGroup
 }
 
 // NewWorkflow creates a new workflow with initial state for the given URLs
-func NewWorkflow(urls []string, rawVTTDir, cleanedDir string) WorkflowState {
+func NewWorkflow(urls []string, rawVTTDir, cleanedDir string, parallelWorkers int) WorkflowState {
 	jobs := make([]TranscriptJob, len(urls))
 	for i, url := range urls {
 		jobs[i] = TranscriptJob{
@@ -62,5 +77,11 @@ func NewWorkflow(urls []string, rawVTTDir, cleanedDir string) WorkflowState {
 		ProcessedFiles:  []string{},
 		RawVTTDir:       rawVTTDir,
 		CleanedDir:      cleanedDir,
+		ParallelWorkers: parallelWorkers,
+		// Initialize new fields
+		jobQueue:      make(chan int, len(urls)),      // Buffered channel for all job indices
+		resultsChan:   make(chan JobProcessingResult), // Unbuffered for results
+		jobsCompleted: 0,
+		wg:            &sync.WaitGroup{},
 	}
 }
